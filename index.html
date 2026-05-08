@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1D9E75">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mileage">
+<title>Mileage Tracker</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+:root {
+  --green: #1D9E75; --green-dark: #0F6E56; --green-deep: #085041;
+  --green-light: #E1F5EE; --red: #E24B4A; --red-dark: #A32D2D;
+  --red-light: #FCEBEB; --blue-light: #E6F1FB; --blue-text: #185FA5;
+  --purple-light: #EEEDFE; --purple-text: #534AB7;
+  --amber-light: #FAEEDA; --amber-text: #854F0B;
+  --bg: #f2f1ed; --surface: #ffffff; --surface2: #f7f6f3;
+  --text: #1a1a18; --text2: #6b6b67;
+  --border: rgba(0,0,0,0.09); --border2: rgba(0,0,0,0.15);
+  --radius: 16px; --radius-sm: 10px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bot: env(safe-area-inset-bottom, 0px);
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111110; --surface: #1c1c1a; --surface2: #242422;
+    --text: #f0efe9; --text2: #9e9e9a;
+    --border: rgba(255,255,255,0.08); --border2: rgba(255,255,255,0.14);
+    --green-light: #07352a; --green-deep: #5DCAA5;
+    --red-light: #2a0d0d; --red-dark: #f09595;
+    --blue-light: #0c2240; --blue-text: #85B7EB;
+    --purple-light: #1a1840; --purple-text: #AFA9EC;
+    --amber-light: #271900; --amber-text: #EF9F27;
+  }
+}
+
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overscroll-behavior: none; }
+
+.app { display: flex; flex-direction: column; height: 100%; max-width: 480px; margin: 0 auto; }
+
+.topbar {
+  background: var(--green); color: white;
+  padding: calc(var(--safe-top) + 14px) 20px 14px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.topbar-logo { display: flex; align-items: center; gap: 10px; }
+.topbar-icon { width: 32px; height: 32px; background: rgba(255,255,255,0.2); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+.topbar-title { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
+
+.tab-bar { background: rgba(255,255,255,0.15); border-radius: 10px; padding: 3px; display: flex; gap: 2px; }
+.tab { font-size: 13px; font-weight: 600; padding: 5px 12px; border-radius: 8px; border: none; background: none; color: rgba(255,255,255,0.7); font-family: var(--font); cursor: pointer; transition: all 0.15s; }
+.tab.active { background: white; color: var(--green); }
+
+.scroll-area { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px 16px calc(var(--safe-bot) + 16px); }
+
+.card { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); padding: 18px; margin-bottom: 12px; }
+
+.status-row { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+.status-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--border2); flex-shrink: 0; transition: background 0.3s; }
+.status-dot.active { background: var(--green); box-shadow: 0 0 0 4px rgba(29,158,117,0.2); animation: pulse 2s infinite; }
+.status-dot.error { background: var(--red); }
+@keyframes pulse { 0%,100%{box-shadow:0 0 0 4px rgba(29,158,117,0.2)} 50%{box-shadow:0 0 0 8px rgba(29,158,117,0.06)} }
+.status-text { font-size: 14px; color: var(--text2); line-height: 1.4; }
+.status-text strong { color: var(--text); }
+
+.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 18px; }
+.metric { background: var(--surface2); border-radius: var(--radius-sm); padding: 12px 8px; text-align: center; }
+.metric-val { font-size: 26px; font-weight: 700; letter-spacing: -1px; line-height: 1; }
+.metric-lbl { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.07em; margin-top: 4px; }
+
+.big-btn { width: 100%; padding: 17px; border-radius: var(--radius-sm); font-size: 16px; font-weight: 700; font-family: var(--font); cursor: pointer; border: none; display: flex; align-items: center; justify-content: center; gap: 8px; transition: transform 0.1s, opacity 0.1s; }
+.big-btn:active { transform: scale(0.97); opacity: 0.9; }
+.start-btn { background: var(--green); color: white; }
+.stop-btn { background: var(--red); color: white; }
+
+.route-display { display: none; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.route-display.visible { display: block; }
+.route-point { display: flex; align-items: flex-start; gap: 12px; }
+.route-dot-wrap { display: flex; flex-direction: column; align-items: center; padding-top: 4px; }
+.route-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.route-dot.green { background: var(--green); }
+.route-dot.red { background: var(--red); }
+.route-dot.gray { background: var(--border2); animation: blink 1.2s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+.route-line { width: 1px; height: 24px; background: var(--border); margin: 3px 0; }
+.route-addr { font-size: 14px; font-weight: 600; color: var(--text); }
+.route-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+.panel-title { font-size: 15px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 7px; }
+.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.field-row { margin-bottom: 10px; }
+label { display: block; font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
+input[type=text], input[type=number], select, textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border2); border-radius: var(--radius-sm); padding: 11px 12px; font-size: 15px; font-family: var(--font); color: var(--text); outline: none; -webkit-appearance: none; appearance: none; transition: border-color 0.15s; }
+input:focus, select:focus, textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(29,158,117,0.15); }
+textarea { resize: none; height: 76px; }
+select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b6b67' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+
+.btn-row { display: flex; gap: 8px; margin-top: 14px; }
+.btn-sec { flex: 1; padding: 12px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; font-family: var(--font); cursor: pointer; border: 1px solid var(--border2); background: none; color: var(--text); transition: background 0.15s; }
+.btn-sec:active { background: var(--surface2); }
+.btn-pri { flex: 2; padding: 12px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 700; font-family: var(--font); cursor: pointer; border: none; background: var(--green); color: white; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.btn-pri:active { opacity: 0.85; }
+
+.summary-bar { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 12px; }
+
+/* Export button */
+.export-btn { width: 100%; padding: 13px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 700; font-family: var(--font); cursor: pointer; border: 1px solid var(--border2); background: var(--surface); color: var(--text); display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px; transition: background 0.15s; }
+.export-btn:active { background: var(--surface2); }
+.export-icon { width: 18px; height: 18px; background: #1D6F42; border-radius: 4px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+.trip-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 10px; cursor: pointer; transition: border-color 0.15s; }
+.trip-card:active { opacity: 0.85; }
+.trip-card.expanded { border-color: var(--green); }
+.trip-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.trip-route { font-size: 15px; font-weight: 700; line-height: 1.3; }
+.trip-date { font-size: 12px; color: var(--text2); margin-top: 3px; }
+.trip-badge { background: var(--green-light); color: var(--green-deep); font-size: 14px; font-weight: 700; padding: 4px 11px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; }
+.trip-meta { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.trip-meta-item { font-size: 12px; color: var(--text2); }
+.trip-expand { display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.trip-card.expanded .trip-expand { display: block; }
+.trip-notes { font-size: 13px; color: var(--text2); font-style: italic; margin-bottom: 12px; padding: 10px 12px; background: var(--surface2); border-radius: var(--radius-sm); border-left: 3px solid var(--green); }
+.trip-actions { display: flex; gap: 8px; }
+.btn-sm { padding: 7px 14px; font-size: 13px; font-weight: 600; border-radius: var(--radius-sm); border: 1px solid var(--border2); background: none; cursor: pointer; font-family: var(--font); color: var(--text); }
+.btn-sm:active { background: var(--surface2); }
+.btn-sm.danger { color: var(--red); border-color: rgba(226,75,74,0.4); }
+.btn-sm.danger:active { background: var(--red-light); }
+
+.chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.cat-business { background: var(--blue-light); color: var(--blue-text); }
+.cat-personal { background: var(--purple-light); color: var(--purple-text); }
+.cat-medical { background: var(--red-light); color: var(--red-dark); }
+.cat-other { background: var(--surface2); color: var(--text2); }
+
+.empty-state { text-align: center; padding: 4rem 1rem; color: var(--text2); }
+.empty-icon { font-size: 48px; margin-bottom: 12px; }
+.empty-text { font-size: 15px; line-height: 1.5; }
+
+.install-banner { background: var(--green-dark); color: white; padding: 11px 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; font-weight: 600; flex-shrink: 0; }
+.install-banner button { background: white; color: var(--green-dark); border: none; border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 700; font-family: var(--font); cursor: pointer; }
+.install-dismiss { background: none !important; color: rgba(255,255,255,0.6) !important; font-size: 22px !important; padding: 0 4px !important; line-height: 1 !important; }
+
+.toast { position: fixed; bottom: calc(var(--safe-bot) + 20px); left: 50%; transform: translateX(-50%) translateY(10px); background: #1a1a18; color: white; padding: 11px 20px; border-radius: 24px; font-size: 14px; font-weight: 600; z-index: 999; opacity: 0; pointer-events: none; transition: opacity 0.25s, transform 0.25s; white-space: nowrap; font-family: var(--font); }
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+.hidden { display: none !important; }
+
+@media (max-width: 360px) { .field-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="install-banner hidden" id="install-banner">
+    <span>📲 Install for best GPS performance</span>
+    <div style="display:flex;gap:8px">
+      <button onclick="installApp()">Install</button>
+      <button class="install-dismiss" onclick="document.getElementById('install-banner').classList.add('hidden')">×</button>
+    </div>
+  </div>
+
+  <div class="topbar">
+    <div class="topbar-logo">
+      <div class="topbar-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 17l2-8h14l2 8"/><line x1="5" y1="17" x2="19" y2="17"/>
+          <circle cx="7.5" cy="17" r="1.5" fill="white" stroke="none"/>
+          <circle cx="16.5" cy="17" r="1.5" fill="white" stroke="none"/>
+        </svg>
+      </div>
+      <span class="topbar-title">Mileage</span>
+    </div>
+    <div class="tab-bar">
+      <button class="tab active" id="tab-track" onclick="switchView('track')">Track</button>
+      <button class="tab" id="tab-history" onclick="switchView('history')">History</button>
+    </div>
+  </div>
+
+  <!-- TRACK -->
+  <div id="view-track" class="scroll-area">
+    <div class="card">
+      <div class="status-row">
+        <div class="status-dot" id="status-dot"></div>
+        <span class="status-text" id="status-text">Ready to start tracking</span>
+      </div>
+      <div class="metrics">
+        <div class="metric"><div class="metric-val" id="m-miles">0.0</div><div class="metric-lbl">KM</div></div>
+        <div class="metric"><div class="metric-val" id="m-time">0:00</div><div class="metric-lbl">Time</div></div>
+        <div class="metric"><div class="metric-val" id="m-speed">0</div><div class="metric-lbl">km/h avg</div></div>
+      </div>
+      <button class="big-btn start-btn" id="main-btn" onclick="toggleTracking()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Start Trip
+      </button>
+      <div class="route-display" id="route-display">
+        <div class="route-point" style="margin-bottom:4px">
+          <div class="route-dot-wrap">
+            <div class="route-dot green"></div>
+            <div class="route-line"></div>
+          </div>
+          <div>
+            <div class="route-addr" id="start-addr">Acquiring location…</div>
+            <div class="route-sub" id="start-time"></div>
+          </div>
+        </div>
+        <div class="route-point">
+          <div class="route-dot-wrap"><div class="route-dot gray" id="end-dot"></div></div>
+          <div>
+            <div class="route-addr" id="end-addr">Tracking…</div>
+            <div class="route-sub" id="end-time"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card hidden" id="save-panel">
+      <div class="panel-title">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Save trip
+      </div>
+      <div class="field-grid">
+        <div class="field-row"><label>From</label><input type="text" id="save-from" placeholder="Start location" autocomplete="off"/></div>
+        <div class="field-row"><label>To</label><input type="text" id="save-to" placeholder="End location" autocomplete="off"/></div>
+      </div>
+      <div class="field-grid">
+        <div class="field-row">
+          <label>Category</label>
+          <select id="save-cat">
+            <option value="business">Business</option>
+            <option value="personal">Personal</option>
+            <option value="medical">Medical</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="field-row"><label>Kilometres</label><input type="number" id="save-miles" step="0.1" min="0" inputmode="decimal"/></div>
+      </div>
+      <div class="field-row"><label>Notes (optional)</label><textarea id="save-notes" placeholder="Client visit, errand, appointment…"></textarea></div>
+      <div class="btn-row">
+        <button class="btn-sec" onclick="discardTrip()">Discard</button>
+        <button class="btn-pri" onclick="saveTrip()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Save trip
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div id="view-history" class="scroll-area hidden">
+    <div class="summary-bar">
+      <div class="metric"><div class="metric-val" id="sum-trips">0</div><div class="metric-lbl">Trips</div></div>
+      <div class="metric"><div class="metric-val" id="sum-miles">0.0</div><div class="metric-lbl">KM</div></div>
+      <div class="metric"><div class="metric-val" id="sum-time">0h 0m</div><div class="metric-lbl">Time</div></div>
+    </div>
+
+    <button class="export-btn" id="export-btn" onclick="exportExcel()">
+      <div class="export-icon">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg>
+      </div>
+      Export to Excel (.xlsx)
+    </button>
+
+    <div class="card hidden" id="edit-panel" style="border-color:var(--green)">
+      <div class="panel-title">Edit trip</div>
+      <div class="field-grid">
+        <div class="field-row"><label>From</label><input type="text" id="edit-from" autocomplete="off"/></div>
+        <div class="field-row"><label>To</label><input type="text" id="edit-to" autocomplete="off"/></div>
+      </div>
+      <div class="field-grid">
+        <div class="field-row">
+          <label>Category</label>
+          <select id="edit-cat">
+            <option value="business">Business</option>
+            <option value="personal">Personal</option>
+            <option value="medical">Medical</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="field-row"><label>Kilometres</label><input type="number" id="edit-miles" step="0.1" min="0" inputmode="decimal"/></div>
+      </div>
+      <div class="field-row"><label>Notes</label><textarea id="edit-notes"></textarea></div>
+      <div class="btn-row">
+        <button class="btn-sec" onclick="cancelEdit()">Cancel</button>
+        <button class="btn-pri" onclick="saveEdit()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Save changes
+        </button>
+      </div>
+    </div>
+
+    <div id="trip-list"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+let deferredInstall = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); deferredInstall = e;
+  document.getElementById('install-banner').classList.remove('hidden');
+});
+function installApp() {
+  if (!deferredInstall) return;
+  deferredInstall.prompt();
+  deferredInstall.userChoice.then(() => { deferredInstall = null; document.getElementById('install-banner').classList.add('hidden'); });
+}
+
+// ── State ──
+let trips = [], tracking = false;
+let startCoords = null, endCoords = null, startTime = null;
+let timerInterval = null, watchId = null;
+let totalDistMeters = 0, prevCoords = null, editingId = null;
+const KEY = 'mileage_v4';
+
+function load() { try { trips = JSON.parse(localStorage.getItem(KEY)||'[]'); } catch { trips=[]; } }
+function persist() { try { localStorage.setItem(KEY, JSON.stringify(trips)); } catch(e){} }
+load();
+
+// ── Views ──
+function switchView(v) {
+  ['track','history'].forEach(n => {
+    document.getElementById('view-'+n).classList.toggle('hidden', n!==v);
+    document.getElementById('tab-'+n).classList.toggle('active', n===v);
+  });
+  if (v==='history') renderHistory();
+}
+
+// ── Geo helpers ──
+async function geocode(lat, lng) {
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, { headers:{'Accept-Language':'en'} });
+    if (!r.ok) throw 0;
+    const d = await r.json(), a = d.address||{};
+    const road = a.road||a.pedestrian||a.path||'';
+    const area = a.suburb||a.neighbourhood||a.city||a.town||a.village||a.county||'';
+    if (road&&area) return `${road}, ${area}`;
+    return road||area||`${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  } catch { return `${lat.toFixed(4)}, ${lng.toFixed(4)}`; }
+}
+
+function haversine(a,b) {
+  const R=6371000, toR=x=>x*Math.PI/180;
+  const dLat=toR(b.lat-a.lat), dLng=toR(b.lng-a.lng);
+  const x=Math.sin(dLat/2)**2+Math.cos(toR(a.lat))*Math.cos(toR(b.lat))*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+const mi = m => m/1000;
+
+function fmtDur(ms) {
+  const s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60);
+  return h>0?`${h}:${pad(m%60)}:${pad(s%60)}`:`${m}:${pad(s%60)}`;
+}
+function fmtDurShort(ms) {
+  const h=Math.floor(ms/3600000),m=Math.floor((ms%3600000)/60000);
+  return h>0?`${h}h ${m}m`:`${m}m`;
+}
+const pad = n => String(n).padStart(2,'0');
+
+// ── Timer ──
+function updateTimer() {
+  if (!startTime) return;
+  const el = Date.now()-startTime, miles = mi(totalDistMeters);
+  document.getElementById('m-time').textContent = fmtDur(el);
+  document.getElementById('m-miles').textContent = miles.toFixed(1);
+  const hrs = el/3600000;
+  document.getElementById('m-speed').textContent = Math.round(hrs>0.001?miles/hrs:0);
+}
+
+// ── Tracking ──
+function toggleTracking() {
+  if (!tracking) startTracking(); else stopTracking();
+}
+
+function startTracking() {
+  if (!navigator.geolocation) { showToast('GPS not available'); return; }
+
+  const dot = document.getElementById('status-dot');
+  dot.className = 'status-dot';
+  document.getElementById('status-text').textContent = 'Requesting GPS permission…';
+
+  navigator.geolocation.getCurrentPosition(
+    firstPos => {
+      tracking = true;
+      startTime = Date.now();
+      totalDistMeters = 0; prevCoords = null;
+      startCoords = null; endCoords = null;
+
+      dot.classList.add('active');
+      document.getElementById('status-text').innerHTML = '<strong>Tracking active</strong>';
+      setBtn('stop');
+      document.getElementById('route-display').classList.add('visible');
+      document.getElementById('start-time').textContent = nowTime();
+      timerInterval = setInterval(updateTimer, 1000);
+
+      const first = { lat: firstPos.coords.latitude, lng: firstPos.coords.longitude };
+      startCoords = first;
+      geocode(first.lat, first.lng).then(addr => { document.getElementById('start-addr').textContent = addr; });
+
+      watchId = navigator.geolocation.watchPosition(pos => {
+        const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        if (prevCoords) { const d=haversine(prevCoords,c); if(d>3) totalDistMeters+=d; }
+        prevCoords = c; endCoords = c;
+      }, err => console.warn('Watch:', err.message),
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 });
+    },
+    err => {
+      const dot = document.getElementById('status-dot');
+      dot.classList.add('error');
+      const msgs = { 1:'Location permission denied — allow in Settings', 2:'GPS signal unavailable', 3:'GPS timed out — try again' };
+      document.getElementById('status-text').textContent = msgs[err.code]||'GPS error';
+      showToast('GPS error — check permissions');
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
+}
+
+function stopTracking() {
+  tracking = false;
+  clearInterval(timerInterval);
+  if (watchId!==null) { navigator.geolocation.clearWatch(watchId); watchId=null; }
+
+  document.getElementById('status-dot').classList.remove('active');
+  document.getElementById('status-text').textContent = 'Trip ended — save below';
+  setBtn('start');
+
+  const endDot = document.getElementById('end-dot');
+  endDot.className = 'route-dot red'; endDot.style.animation='none';
+  document.getElementById('end-time').textContent = nowTime();
+  document.getElementById('save-miles').value = mi(totalDistMeters).toFixed(1);
+
+  const sa = document.getElementById('start-addr').textContent;
+  if (sa && sa !== 'Acquiring location…') document.getElementById('save-from').value = sa;
+
+  if (endCoords) {
+    document.getElementById('end-addr').textContent = 'Looking up address…';
+    geocode(endCoords.lat, endCoords.lng).then(addr => {
+      document.getElementById('end-addr').textContent = addr;
+      document.getElementById('save-to').value = addr;
+    });
+  }
+
+  document.getElementById('save-panel').classList.remove('hidden');
+  setTimeout(() => document.getElementById('save-panel').scrollIntoView({behavior:'smooth',block:'nearest'}), 100);
+}
+
+function setBtn(mode) {
+  const btn = document.getElementById('main-btn');
+  if (mode==='stop') {
+    btn.className='big-btn stop-btn';
+    btn.innerHTML=`<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg> Stop Trip`;
+  } else {
+    btn.className='big-btn start-btn';
+    btn.innerHTML=`<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start Trip`;
+  }
+}
+
+function nowTime() { return new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
+
+// ── Save / Discard ──
+function saveTrip() {
+  const miles = parseFloat(document.getElementById('save-miles').value)||0;
+  trips.unshift({
+    id: Date.now(),
+    from: document.getElementById('save-from').value.trim()||'Unknown start',
+    to: document.getElementById('save-to').value.trim()||'Unknown end',
+    miles, cat: document.getElementById('save-cat').value,
+    notes: document.getElementById('save-notes').value.trim(),
+    duration: startTime ? Date.now()-startTime : 0,
+    date: new Date().toISOString()
+  });
+  persist(); resetTrackView(); showToast('Trip saved ✓');
+}
+
+function discardTrip() { resetTrackView(); showToast('Trip discarded'); }
+
+function resetTrackView() {
+  document.getElementById('save-panel').classList.add('hidden');
+  document.getElementById('route-display').classList.remove('visible');
+  ['save-from','save-to','save-notes','save-miles'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('m-miles').textContent='0.0';
+  document.getElementById('m-time').textContent='0:00';
+  document.getElementById('m-speed').textContent='0';
+  document.getElementById('status-text').textContent='Ready to start tracking';
+  document.getElementById('status-dot').className='status-dot';
+  document.getElementById('end-dot').className='route-dot gray';
+  document.getElementById('end-dot').style.animation='';
+  document.getElementById('start-addr').textContent='Acquiring location…';
+  document.getElementById('end-addr').textContent='Tracking…';
+  startTime=null;
+}
+
+// ── History ──
+function renderHistory() {
+  const totalMiles = trips.reduce((s,t)=>s+(t.miles||0),0);
+  const totalMs = trips.reduce((s,t)=>s+(t.duration||0),0);
+  document.getElementById('sum-trips').textContent = trips.length;
+  document.getElementById('sum-miles').textContent = totalMiles.toFixed(1);
+  document.getElementById('sum-time').textContent = fmtDurShort(totalMs);
+
+  const exportBtn = document.getElementById('export-btn');
+  exportBtn.classList.toggle('hidden', trips.length===0);
+
+  const list = document.getElementById('trip-list');
+  if (!trips.length) {
+    list.innerHTML=`<div class="empty-state"><div class="empty-icon">🛣️</div><div class="empty-text">No trips yet.<br>Head to Track to log your first trip.</div></div>`;
+    return;
+  }
+
+  list.innerHTML = trips.map(t => {
+    const d=new Date(t.date);
+    const ds=d.toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'});
+    const ts=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    const dur=t.duration?fmtDurShort(t.duration):'—';
+    return `<div class="trip-card" id="tc-${t.id}" onclick="toggleCard(${t.id})">
+      <div class="trip-head">
+        <div><div class="trip-route">${esc(t.from)} → ${esc(t.to)}</div><div class="trip-date">${ds} · ${ts}</div></div>
+        <span class="trip-badge">${t.miles.toFixed(1)} km</span>
+      </div>
+      <div class="trip-meta">
+        <span class="trip-meta-item">⏱ ${dur}</span>
+        <span class="chip cat-${t.cat}">${{business:'Business',personal:'Personal',medical:'Medical',other:'Other'}[t.cat]||t.cat}</span>
+      </div>
+      <div class="trip-expand">
+        ${t.notes?`<div class="trip-notes">${esc(t.notes)}</div>`:''}
+        <div class="trip-actions">
+          <button class="btn-sm" onclick="editTrip(${t.id},event)">✏️ Edit</button>
+          <button class="btn-sm danger" onclick="deleteTrip(${t.id},event)">🗑 Delete</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleCard(id) { document.getElementById('tc-'+id).classList.toggle('expanded'); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function editTrip(id,e) {
+  e.stopPropagation();
+  const t=trips.find(x=>x.id===id); if(!t) return;
+  editingId=id;
+  document.getElementById('edit-from').value=t.from;
+  document.getElementById('edit-to').value=t.to;
+  document.getElementById('edit-cat').value=t.cat;
+  document.getElementById('edit-miles').value=t.miles;
+  document.getElementById('edit-notes').value=t.notes||'';
+  const p=document.getElementById('edit-panel');
+  p.classList.remove('hidden');
+  p.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function cancelEdit() { editingId=null; document.getElementById('edit-panel').classList.add('hidden'); }
+function saveEdit() {
+  const t=trips.find(x=>x.id===editingId); if(!t) return;
+  t.from=document.getElementById('edit-from').value.trim()||t.from;
+  t.to=document.getElementById('edit-to').value.trim()||t.to;
+  t.cat=document.getElementById('edit-cat').value;
+  t.miles=parseFloat(document.getElementById('edit-miles').value)||t.miles;
+  t.notes=document.getElementById('edit-notes').value.trim();
+  persist(); cancelEdit(); renderHistory(); showToast('Trip updated');
+}
+function deleteTrip(id,e) {
+  e.stopPropagation();
+  if(!confirm('Delete this trip?')) return;
+  trips=trips.filter(x=>x.id!==id); persist(); renderHistory(); showToast('Trip deleted');
+}
+
+// ── Excel Export ──
+function exportExcel() {
+  if (!trips.length) { showToast('No trips to export'); return; }
+
+  const catLabel = { business:'Business', personal:'Personal', medical:'Medical', other:'Other' };
+
+  // Main trips sheet
+  const rows = trips.map(t => {
+    const d = new Date(t.date);
+    return {
+      'Date': d.toLocaleDateString([],{year:'numeric',month:'2-digit',day:'2-digit'}),
+      'Time': d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
+      'From': t.from,
+      'To': t.to,
+      'Kilometres': t.miles,
+      'Duration': t.duration ? fmtDurShort(t.duration) : '',
+      'Category': catLabel[t.cat]||t.cat,
+      'Notes': t.notes||''
+    };
+  });
+
+  // Summary by category
+  const cats = ['Business','Personal','Medical','Other'];
+  const summary = cats.map(c => {
+    const key = c.toLowerCase();
+    const catTrips = trips.filter(t=>t.cat===key);
+    return {
+      'Category': c,
+      'Trips': catTrips.length,
+      'Total KM': parseFloat(catTrips.reduce((s,t)=>s+(t.miles||0),0).toFixed(1))
+    };
+  });
+  summary.push({
+    'Category': 'TOTAL',
+    'Trips': trips.length,
+    'Total KM': parseFloat(trips.reduce((s,t)=>s+(t.miles||0),0).toFixed(1))
+  });
+
+  const wb = XLSX.utils.book_new();
+
+  // Trips sheet
+  const ws1 = XLSX.utils.json_to_sheet(rows);
+  ws1['!cols'] = [
+    {wch:12},{wch:8},{wch:28},{wch:28},{wch:8},{wch:10},{wch:12},{wch:36}
+  ];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Trips');
+
+  // Summary sheet
+  const ws2 = XLSX.utils.json_to_sheet(summary);
+  ws2['!cols'] = [{wch:14},{wch:8},{wch:14}];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
+
+  const today = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `mileage-metric-${today}.xlsx`);
+  showToast('Exported to Excel ✓');
+}
+
+// ── Toast ──
+function showToast(msg) {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2400);
+}
+</script>
+</body>
+</html>
