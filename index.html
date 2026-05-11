@@ -324,10 +324,87 @@ let startCoords = null, endCoords = null, startTime = null;
 let timerInterval = null, watchId = null;
 let totalDistMeters = 0, prevCoords = null, editingId = null;
 const KEY = 'mileage_v4';
+const TRIP_KEY = 'mileage_active_trip';
 
 function load() { try { trips = JSON.parse(localStorage.getItem(KEY)||'[]'); } catch { trips=[]; } }
 function persist() { try { localStorage.setItem(KEY, JSON.stringify(trips)); } catch(e){} }
+
+// Save in-progress trip state to localStorage every time GPS updates
+function checkpointTrip() {
+  if (!tracking && !startTime) return;
+  try {
+    localStorage.setItem(TRIP_KEY, JSON.stringify({
+      startTime, totalDistMeters,
+      startCoords, endCoords,
+      startAddr: document.getElementById('start-addr').textContent
+    }));
+  } catch(e) {}
+}
+
+// Clear checkpoint once saved or discarded
+function clearCheckpoint() {
+  try { localStorage.removeItem(TRIP_KEY); } catch(e) {}
+}
+
+// On load, check if there's an interrupted trip to recover
+function checkForInterruptedTrip() {
+  try {
+    const saved = localStorage.getItem(TRIP_KEY);
+    if (!saved) return;
+    const state = JSON.parse(saved);
+    if (!state.startTime) return;
+
+    const km = mi(state.totalDistMeters).toFixed(1);
+    const elapsed = Date.now() - state.startTime;
+    const dur = fmtDurShort(elapsed);
+
+    // Show recovery banner
+    const banner = document.createElement('div');
+    banner.id = 'recovery-banner';
+    banner.style.cssText = `background:#854F0B;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;font-weight:600;flex-shrink:0;`;
+    banner.innerHTML = `
+      <span>⚠️ Interrupted trip recovered — ${km} km, ${dur}</span>
+      <div style="display:flex;gap:8px">
+        <button onclick="recoverTrip()" style="background:white;color:#854F0B;border:none;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;font-family:var(--font);cursor:pointer;">Save it</button>
+        <button onclick="dismissRecovery()" style="background:none;color:rgba(255,255,255,0.7);border:none;font-size:22px;padding:0 4px;line-height:1;cursor:pointer;">×</button>
+      </div>`;
+    document.querySelector('.app').insertBefore(banner, document.querySelector('.topbar'));
+
+    // Stash state for recovery
+    window._recovered = state;
+  } catch(e) {}
+}
+
+function recoverTrip() {
+  const s = window._recovered;
+  if (!s) return;
+  // Pre-fill save panel with recovered data
+  document.getElementById('save-miles').value = mi(s.totalDistMeters).toFixed(1);
+  if (s.startAddr && s.startAddr !== 'Acquiring location…') {
+    document.getElementById('save-from').value = s.startAddr;
+  }
+  if (s.endCoords) {
+    geocode(s.endCoords.lat, s.endCoords.lng).then(addr => {
+      document.getElementById('save-to').value = addr;
+      document.getElementById('end-addr').textContent = addr;
+    });
+    endCoords = s.endCoords;
+  }
+  startTime = s.startTime; // so duration is correct on save
+  document.getElementById('save-panel').classList.remove('hidden');
+  document.getElementById('status-text').textContent = 'Recovered trip — save below';
+  dismissRecovery();
+}
+
+function dismissRecovery() {
+  clearCheckpoint();
+  window._recovered = null;
+  const b = document.getElementById('recovery-banner');
+  if (b) b.remove();
+}
+
 load();
+checkForInterruptedTrip();
 
 // ── Views ──
 function switchView(v) {
@@ -408,12 +485,16 @@ function startTracking() {
 
       const first = { lat: firstPos.coords.latitude, lng: firstPos.coords.longitude };
       startCoords = first;
-      geocode(first.lat, first.lng).then(addr => { document.getElementById('start-addr').textContent = addr; });
+      geocode(first.lat, first.lng).then(addr => {
+        document.getElementById('start-addr').textContent = addr;
+        checkpointTrip();
+      });
 
       watchId = navigator.geolocation.watchPosition(pos => {
         const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         if (prevCoords) { const d=haversine(prevCoords,c); if(d>3) totalDistMeters+=d; }
         prevCoords = c; endCoords = c;
+        checkpointTrip();
       }, err => console.warn('Watch:', err.message),
       { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 });
     },
@@ -482,10 +563,10 @@ function saveTrip() {
     duration: startTime ? Date.now()-startTime : 0,
     date: new Date().toISOString()
   });
-  persist(); resetTrackView(); showToast('Trip saved ✓');
+  persist(); clearCheckpoint(); resetTrackView(); showToast('Trip saved ✓');
 }
 
-function discardTrip() { resetTrackView(); showToast('Trip discarded'); }
+function discardTrip() { clearCheckpoint(); resetTrackView(); showToast('Trip discarded'); }
 
 function resetTrackView() {
   document.getElementById('save-panel').classList.add('hidden');
